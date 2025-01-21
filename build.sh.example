@@ -1,0 +1,14 @@
+#! /bin/bash
+
+if [ ! -d "bin" ]; then
+    mkdir bin
+fi  
+
+clear
+
+PROJECT_PATH="absolute/path/to/project_folder"
+BUILD_PATH="${PROJECT_PATH}bin/"
+SOURCE_PATH="${PROJECT_PATH}src/"
+OUTPUT_NAME="example.exe"
+
+g++ "${SOURCE_PATH}"*.cc -o "${BUILD_PATH}""${OUTPUT_NAME}"
