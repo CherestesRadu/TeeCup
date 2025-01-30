@@ -6,7 +6,7 @@ fi
 
 clear
 
-PROJECT_PATH="absolute/path/to/project_folder"
+PROJECT_PATH="absolute/path/to/project_folder/"
 BUILD_PATH="${PROJECT_PATH}bin/"
 SOURCE_PATH="${PROJECT_PATH}src/"
 OUTPUT_NAME="example.exe"
