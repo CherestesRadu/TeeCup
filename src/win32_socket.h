@@ -92,13 +92,15 @@ struct Socket
 
 	void Send(Socket *client, const char* data, int size)
 	{
-		if(send(client.fd, data, size, 0) == -1)
+		if(send(client->fd, data, size, 0) == -1)
 		{
 			std::cerr << "Error: send failed\n";
 			exit(1);
 		}
 	}
 
+	// int Receive(char* buffer, int size)
+	// int Receive(Socket *client, char* buffer, int size)
 	int Receive(Socket *client, char* buffer, int size)
 	{
 		int bytes = recv(client->fd, buffer, size, 0);
