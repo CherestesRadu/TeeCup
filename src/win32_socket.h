@@ -90,7 +90,7 @@ struct Socket
 		}
 	}
 
-	void Send(Socket &client, const char* data, int size)
+	void Send(Socket *client, const char* data, int size)
 	{
 		if(send(client.fd, data, size, 0) == -1)
 		{
@@ -99,9 +99,9 @@ struct Socket
 		}
 	}
 
-	int Receive(char* buffer, int size)
+	int Receive(Socket *client, char* buffer, int size)
 	{
-		int bytes = recv(fd, buffer, size, 0);
+		int bytes = recv(client->fd, buffer, size, 0);
 		if(bytes == -1)
 		{
 			std::cerr << "Error: recv failed\n";
