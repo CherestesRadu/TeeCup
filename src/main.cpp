@@ -20,5 +20,11 @@ int main(int argc, char **argv)
         printf("Server Error. Aborting...\n");
     }
 
+    while(server.is_open())
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    printf("Server exitting...\n");
     return 0;
 }
