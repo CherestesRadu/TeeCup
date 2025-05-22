@@ -82,6 +82,8 @@ bool Server::open()
                     std::lock_guard<std::mutex> guard(server.mtx);
                     server.clients.push_back(client);
                 }
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         },
         std::ref(*this));
