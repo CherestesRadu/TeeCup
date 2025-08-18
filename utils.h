@@ -33,6 +33,6 @@ typedef uint8_t u8;
 u64 htonll(u64 value);
 u64 ntohll(u64 value);
 const char *sockaddr_to_str(const struct sockaddr *addr, char *buf, size_t buflen);
-int set_sock_blockmde(int fd, int blocking);
+int set_sock_blockmode(int fd, int blocking);
 
 #endif // UTILS_H

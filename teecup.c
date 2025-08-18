@@ -3,6 +3,9 @@
 
 static int server_should_close = 0;
 
+#define JOIN_ASK     0x01
+#define JOIN_ANSWER  0x02
+
 typedef enum MessageType
 {
     MSG_JOIN = 1,
@@ -36,7 +39,7 @@ void serialize_join_message(JoinMessage *message, u8 *byte_buffer)
     byte_buffer[offset++] = message->header.flags;
 
     memcpy(byte_buffer + offset, message->name, strlen(message->name));
-    offset + 32;
+    offset += 32;
 }
 
 void deserialize_join_message(JoinMessage *message, const u8 *received_buffer)
@@ -115,7 +118,7 @@ int main(int argc, char **argv)
         PRINT_SOCKERROR(errno);
         return EXIT_FAILURE;
     }
-    set_sock_blockmde(server_fd, 0);
+    set_sock_blockmode(server_fd, 0);
 
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
     // Accept loop
@@ -243,11 +246,30 @@ void *recv_thread_func(void *args)
                 MessageHeader header;
                 u8 received_header[sizeof(header)] = {0};
                 ssize_t bytes_received = recv_all_tcp(fd, received_header, sizeof(header));
+                
+                if(bytes_received <= 0)
+                {
+                    printf("Client %s disconnected\n", clients->clients[i].ip);
+                    remove_client(clients, clients->clients[i].ip);
+                    --i; // Adjust index after removal
+                    continue;
+                }
+
                 deserialize_header(&header, received_header);
                 
                 u16 payload_length = header.length - sizeof(header);
                 u8 *payload = malloc(payload_length);
                 bytes_received = recv_all_tcp(fd, payload, payload_length);
+                
+                if(bytes_received <= 0)
+                {
+                    printf("Client %s disconnected\n", clients->clients[i].ip);
+                    free(payload);
+                    remove_client(clients, clients->clients[i].ip);
+                    --i; // Adjust index after removal
+                    continue;
+                }
+
                 deserialize_payload(header.type, payload);
                 
                 switch(header.type)
@@ -366,7 +388,7 @@ const char *sockaddr_to_str(const struct sockaddr *addr, char *buf, size_t bufle
     return buf;
 }
 
-int set_sock_blockmde(int fd, int blocking)
+int set_sock_blockmode(int fd, int blocking)
 {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1)
