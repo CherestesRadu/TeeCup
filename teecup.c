@@ -3,29 +3,82 @@
 
 static int server_should_close = 0;
 
-typedef enum Message
+typedef enum MessageType
 {
-    JOIN_MESSAGE,
-    LEAVE_MESSAGE,
-    PING,
-    MESSAGE_COUNT
-};
+    MSG_JOIN = 1,
+    MSG_LEAVE,
+    MSG_CHAT,
+    MSG_PING,
+    MSG_COUNT
+} MessageType;
 
-typedef enum JoinMessageType
+typedef struct MessageHeader
 {
-    JM_ASK,
-    JM_ANSWER,
-    JM_COUNT
-};
+    u16 length;
+    u8 type; 
+    u8 flags; 
+} __attribute__((packed)) MessageHeader;
 
-#pragma pack(push, 1)
 typedef struct JoinMessage
 {
-    u16 type;
-    u8 name[32];
-    u64 timestamp;
-} JoinMessage;
-#pragma pack(pop)
+    MessageHeader header;
+    u8 name[32]; // Client name
+} __attribute__((packed)) JoinMessage;
+
+void serialize_join_message(JoinMessage *message, u8 *byte_buffer)
+{
+    size_t offset = 0;
+    u16 net_length = htons(sizeof(JoinMessage));
+    memcpy(byte_buffer + offset, &net_length, sizeof(net_length));
+    offset += sizeof(net_length);
+
+    byte_buffer[offset++] = MSG_JOIN;
+    byte_buffer[offset++] = message->header.flags;
+
+    memcpy(byte_buffer + offset, message->name, strlen(message->name));
+    offset + 32;
+}
+
+void deserialize_join_message(JoinMessage *message, const u8 *received_buffer)
+{
+    size_t offset = 0;
+    MessageHeader *header = &message->header;
+    memcpy(&header->length, received_buffer + offset, sizeof(header->length));
+    header->length = ntohs(header->length);
+    offset += sizeof(header->length);
+
+    memcpy(&header->type, received_buffer + offset, sizeof(header->type));
+    offset += sizeof(header->type);
+
+    memcpy(&header->flags, received_buffer + offset, sizeof(header->flags));
+    offset += sizeof(header->flags);
+
+    memcpy(message->name, received_buffer + offset, sizeof(message->name));
+    offset += sizeof(message->name);
+}
+
+void deserialize_header(MessageHeader *header, u8 *received_buffer)
+{
+    size_t offset = 0;
+    memcpy(&header->length, received_buffer + offset, sizeof(header->length));
+    offset += sizeof(header->length);
+    header->length = ntohs(header->length);
+
+    memcpy(&header->type, received_buffer + offset, sizeof(header->type));
+    offset += sizeof(header->type);
+
+    memcpy(&header->flags, received_buffer + offset, sizeof(header->flags));
+    offset += sizeof(header->flags);
+}
+
+void deserialize_payload(int type, u8 *payload)
+{
+    switch(type)
+    {
+        default:
+            return;
+    }
+}
 
 typedef struct RecvArgs
 {
@@ -131,6 +184,26 @@ int main(int argc, char **argv)
     return 0;
 }
 
+ssize_t recv_all_tcp(int fd, u8 *buffer, size_t size)
+{
+    size_t total_received = 0;
+    while(total_received < size)
+    {
+        ssize_t bytes = recv(fd, buffer + total_received, size - total_received, 0);
+        if(bytes == 0) 
+            return bytes;
+        if(bytes < 0)
+        {
+            PRINT_SOCKERROR(errno);
+            return bytes;
+        }
+        
+        total_received += bytes;
+    }
+
+    return total_received;
+}
+
 void *recv_thread_func(void *args)
 {
     printf("[recv_thread_func] Started!\n");
@@ -167,6 +240,31 @@ void *recv_thread_func(void *args)
             int fd = clients->clients[i].fd;
             if (FD_ISSET(fd, &clients->read_fds))
             {
+                MessageHeader header;
+                u8 received_header[sizeof(header)] = {0};
+                ssize_t bytes_received = recv_all_tcp(fd, received_header, sizeof(header));
+                deserialize_header(&header, received_header);
+                
+                u16 payload_length = header.length - sizeof(header);
+                u8 *payload = malloc(payload_length);
+                bytes_received = recv_all_tcp(fd, payload, payload_length);
+                deserialize_payload(header.type, payload);
+                
+                switch(header.type)
+                {
+                    case MSG_JOIN:
+                    {
+                        JoinMessage message = {0};
+                        memcpy(&message.header, &header, sizeof(header));
+                        memcpy(&message.name, payload, sizeof(message.name));
+
+                        printf("%s wants to join\n", message.name);
+
+                        // logic
+                    } break;
+                }
+
+                /*
                 char buffer[1024] = {0};
                 ssize_t bytes = recv(fd, buffer, sizeof(buffer) - 1, 0);
                 if (bytes <= 0)
@@ -177,8 +275,10 @@ void *recv_thread_func(void *args)
                 }
                 else
                 {
+                */
                     // TODO: Buffering for incomplete packets
 
+                    /*
                     buffer[bytes] = 0;
 
                     // Verify bytes for \r\n or \n (only for telnet)
@@ -192,6 +292,9 @@ void *recv_thread_func(void *args)
                     if (strcmp(buffer, "exit") == 0)
                         server_should_close = 1;
                 }
+                    */
+                
+                free(payload);
             }
         }
 

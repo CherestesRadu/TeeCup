@@ -2,3 +2,4 @@ build.sh
 test
 client.py
 Notes
+vscode/*

@@ -24,6 +24,7 @@ typedef uint8_t u8;
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/select.h>
+#include <assert.h>
 
 #define SOCKET_ERROR -1
 #define SERVER_PORT 8888
