@@ -15,8 +15,8 @@ typedef enum MessageType
 typedef struct MessageHeader
 {
     u16 length;
-    u8 type; 
-    u8 flags; 
+    u8 type;
+    u8 flags;
 } __attribute__((packed)) MessageHeader;
 
 typedef struct JoinMessage
@@ -73,10 +73,10 @@ void deserialize_header(MessageHeader *header, u8 *received_buffer)
 
 void deserialize_payload(int type, u8 *payload)
 {
-    switch(type)
+    switch (type)
     {
-        default:
-            return;
+    default:
+        return;
     }
 }
 
@@ -86,7 +86,14 @@ typedef struct RecvArgs
     pthread_mutex_t *mutex;
 } RecvArgs;
 
+typedef struct CommandArgs
+{
+    ClientBuffer *buffer;
+    pthread_mutex_t *mutex;
+} CommandArgs;
+
 void *recv_thread_func(void *args);
+void *command_thread_func(void *args);
 
 int main(int argc, char **argv)
 {
@@ -94,7 +101,7 @@ int main(int argc, char **argv)
     int server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server_fd == SOCKET_ERROR)
     {
-        PRINT_SOCKERROR(errno);
+        PRINT_SOCKERROR(strerror(errno));
         return EXIT_FAILURE;
     }
 
@@ -105,14 +112,14 @@ int main(int argc, char **argv)
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(struct sockaddr_in)) == SOCKET_ERROR)
     {
-        PRINT_SOCKERROR(errno);
+        PRINT_SOCKERROR(strerror(errno));
         return EXIT_FAILURE;
     }
 
     // Set socket listening mode on SERVER_PORT
     if (listen(server_fd, 10) == SOCKET_ERROR)
     {
-        PRINT_SOCKERROR(errno);
+        PRINT_SOCKERROR(strerror(errno));
         return EXIT_FAILURE;
     }
     set_sock_blockmde(server_fd, 0);
@@ -128,6 +135,13 @@ int main(int argc, char **argv)
     recv_args.buffer = &clients;
     recv_args.mutex = &mutex;
 
+    
+    pthread_t command_thread;
+    CommandArgs command_args;
+    command_args.buffer = &clients;
+    command_args.mutex = &mutex;
+
+    pthread_create(&command_thread, 0, command_thread_func, (CommandArgs *)&command_args);
     pthread_create(&recv_thread, 0, recv_thread_func, (RecvArgs *)&recv_args);
 
     while (1)
@@ -149,7 +163,7 @@ int main(int argc, char **argv)
         }
         else if (errno != EAGAIN)
         {
-            PRINT_SOCKERROR(errno);
+            PRINT_SOCKERROR(strerror(errno));
             break;
         }
 
@@ -187,17 +201,17 @@ int main(int argc, char **argv)
 ssize_t recv_all_tcp(int fd, u8 *buffer, size_t size)
 {
     size_t total_received = 0;
-    while(total_received < size)
+    while (total_received < size)
     {
         ssize_t bytes = recv(fd, buffer + total_received, size - total_received, 0);
-        if(bytes == 0) 
+        if (bytes == 0)
             return bytes;
-        if(bytes < 0)
+        if (bytes < 0)
         {
-            PRINT_SOCKERROR(errno);
+            PRINT_SOCKERROR(strerror(errno));
             return bytes;
         }
-        
+
         total_received += bytes;
     }
 
@@ -229,7 +243,7 @@ void *recv_thread_func(void *args)
         int activity = select(max_fd + 1, &clients->read_fds, 0, 0, &tv);
         if (activity < 0)
         {
-            PRINT_SOCKERROR(errno);
+            PRINT_SOCKERROR(strerror(errno));
             printf("select() returned %d\n", activity);
             continue;
         }
@@ -243,57 +257,42 @@ void *recv_thread_func(void *args)
                 MessageHeader header;
                 u8 received_header[sizeof(header)] = {0};
                 ssize_t bytes_received = recv_all_tcp(fd, received_header, sizeof(header));
+                if (bytes_received < 0)
+                {
+                    // Client disconneted
+                    remove_client(clients, clients->clients[i].ip);
+                    --i;
+                    continue;
+                }
                 deserialize_header(&header, received_header);
-                
+
                 u16 payload_length = header.length - sizeof(header);
                 u8 *payload = malloc(payload_length);
                 bytes_received = recv_all_tcp(fd, payload, payload_length);
-                deserialize_payload(header.type, payload);
-                
-                switch(header.type)
+                if (bytes_received < 0)
                 {
-                    case MSG_JOIN:
-                    {
-                        JoinMessage message = {0};
-                        memcpy(&message.header, &header, sizeof(header));
-                        memcpy(&message.name, payload, sizeof(message.name));
-
-                        printf("%s wants to join\n", message.name);
-
-                        // logic
-                    } break;
-                }
-
-                /*
-                char buffer[1024] = {0};
-                ssize_t bytes = recv(fd, buffer, sizeof(buffer) - 1, 0);
-                if (bytes <= 0)
-                {
-                    printf("Client %s disconnected\n", clients->clients[i].ip);
+                    // Client disconneted
                     remove_client(clients, clients->clients[i].ip);
                     --i;
+                    continue;
                 }
-                else
+                deserialize_payload(header.type, payload);
+
+                switch (header.type)
                 {
-                */
-                    // TODO: Buffering for incomplete packets
+                case MSG_JOIN:
+                {
+                    JoinMessage message = {0};
+                    memcpy(&message.header, &header, sizeof(header));
+                    memcpy(&message.name, payload, sizeof(message.name));
 
-                    /*
-                    buffer[bytes] = 0;
+                    printf("%s wants to join\n", message.name);
 
-                    // Verify bytes for \r\n or \n (only for telnet)
-                    for (int i = 0; i < bytes; ++i)
-                    {
-                        if (buffer[i] == '\r' || buffer[i] == '\n')
-                            buffer[i] = 0;
-                    }
-
-                    printf("Client %s said: %s (%ld bytes received)\n", clients->clients[i].ip, buffer, bytes);
-                    if (strcmp(buffer, "exit") == 0)
-                        server_should_close = 1;
+                    // here comes a handshake for extra information
                 }
-                    */
-                
+                break;
+                }
+
                 free(payload);
             }
         }
@@ -310,103 +309,43 @@ void *recv_thread_func(void *args)
     return 0;
 }
 
-u64 htonll(u64 value)
+void *command_thread_func(void *args)
 {
-    // endianness
-    static const int num = 42;
-    if (*(const char *)&num == 42) // Little-endian
+    printf("[command_thread_func] Started!\n");
+    CommandArgs *command = (CommandArgs *)args;
+
+    while (1)
     {
-        u64 hi = htonl((u32)(value >> 32));
-        u64 lo = htonl((u32)(value & 0xFFFFFFFF));
-        return (lo << 32) | hi;
-    }
-    else // Big-endian
-    {
-        return value;
-    }
-}
-
-u64 ntohll(u64 value)
-{
-    // Symmetric
-    return htonll(value);
-}
-
-const char *sockaddr_to_str(const struct sockaddr *addr, char *buf, size_t buflen)
-{
-    if (addr == NULL || buf == NULL)
-        return NULL;
-
-    void *src = NULL;
-
-    switch (addr->sa_family)
-    {
-    case AF_INET:
-    {
-        const struct sockaddr_in *a = (const struct sockaddr_in *)addr;
-        src = (void *)&a->sin_addr;
-        break;
-    }
-    case AF_INET6:
-    {
-        const struct sockaddr_in6 *a6 = (const struct sockaddr_in6 *)addr;
-        src = (void *)&a6->sin6_addr;
-        break;
-    }
-    default:
-        snprintf(buf, buflen, "<unknown family>");
-        return buf;
-    }
-
-    if (inet_ntop(addr->sa_family, src, buf, buflen) == NULL)
-    {
-        snprintf(buf, buflen, "<invalid address>");
-    }
-
-    return buf;
-}
-
-int set_sock_blockmde(int fd, int blocking)
-{
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        return 0;
-    flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
-    return (fcntl(fd, F_SETFL, flags) == 0);
-}
-
-int add_client(ClientBuffer *buffer, int fd, char *ip)
-{
-    if (buffer->size >= MAX_CLIENTS)
-        return 0;
-
-    Client *new_client = &buffer->clients[buffer->size++];
-    new_client->fd = fd;
-    memcpy(new_client->ip, ip, INET6_ADDRSTRLEN);
-
-    FD_SET(fd, &buffer->master_fds); // Add to master set for select polling
-    return 1;
-}
-
-void remove_client(ClientBuffer *buffer, char *ip)
-{
-    for (int i = 0; i < buffer->size; ++i)
-    {
-        Client *client = &buffer->clients[i];
-        if (strcmp(client->ip, ip) == 0)
+        char input[128] = {0};
+        if (scanf("%127s", input) != 1)
         {
-            FD_CLR(client->fd, &buffer->master_fds); // Eliminate from set
-            close(client->fd);
-            for (int j = i; j < buffer->size - 1; ++j)
-                buffer->clients[j] = buffer->clients[j + 1];
-            --buffer->size;
+            // Nothing valid, go on
+            continue;
+        }
+
+        pthread_mutex_lock(command->mutex);
+        if (strcmp(input, "exit") == 0)
+        {
+            server_should_close = 1;
+        }
+        else if(strcmp(input, "print") == 0) // prints clients
+        {
+            print_clients(command->buffer);
+        }
+        else if(strcmp(input, "ping") == 0)
+        {
+            printf("Pinging...\n");
+        }
+        else
+        {
+            printf("Invalid command.\n");
+        }
+
+        if (server_should_close == 1)
+        {
+            pthread_mutex_unlock(command->mutex);
             break;
         }
+        pthread_mutex_unlock(command->mutex);
     }
-}
-
-void print_clients(ClientBuffer *buffer)
-{
-    for (int i = 0; i < buffer->size; ++i)
-        printf("Socket FD: %d\nSocket IP: %s\n\n", buffer->clients[i].fd, buffer->clients[i].ip);
 }

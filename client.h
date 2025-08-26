@@ -1,6 +1,8 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include "utils.h"
+
 #define MAX_CLIENTS 8
 
 typedef struct Client
